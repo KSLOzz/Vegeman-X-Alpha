@@ -1,0 +1,6 @@
+streamlit
+pandas
+geopandas
+statsmodels
+contextily
+matplotlib
