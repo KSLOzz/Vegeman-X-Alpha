@@ -124,3 +124,4 @@ def predict_and_cluster(df, historical_rains, rain_forecast, w_loc, w_growth, da
         df['dispatch_cluster'] = np.nan
 
     return df
+    
