@@ -5,19 +5,16 @@ import statsmodels.formula.api as smf
 import streamlit as st
 
 @st.cache_data
-def load_and_prepare_data(uploaded_files):
+def load_and_prepare_data(dfs):
     """
-    Dynamically loads N years of CSV data, using the first year as the spatial baseline.
+    Dynamically merges N years of DataFrames, using the first year as the spatial baseline.
     Preserves Substation and Line Type metadata for GUI filtering.
     """
-    dfs = []
-    
-    # Read all uploaded files into a list of DataFrames
-    for file in uploaded_files:
-        df = pd.read_csv(file)
-        # Force column names to lowercase to prevent KeyErrors
+    # Force column names to lowercase and standardize lat/lon/line_type
+    for df in dfs:
         df.columns = df.columns.str.strip().str.lower()
-        dfs.append(df)
+        # This line intercepts 'latitude', 'longitude', and 'line.type' and standardizes them
+        df.rename(columns={'latitude': 'lat', 'longitude': 'lon', 'line.type': 'line_type'}, inplace=True)
 
     # Use Year 1 (dfs[0]) as the Master Baseline
     df_master = dfs[0].copy()
@@ -124,4 +121,3 @@ def predict_and_cluster(df, historical_rains, rain_forecast, w_loc, w_growth, da
         df['dispatch_cluster'] = np.nan
 
     return df
-    
