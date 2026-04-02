@@ -56,7 +56,11 @@ if st.sidebar.button("🚀 Run Prediction Engine"):
     if len(uploaded_files) == num_years:
         with st.spinner("Processing dynamic LiDAR data and running LMM..."):
             
-            df_base = load_and_prepare_data(uploaded_files)
+            # 1. OPEN THE FILES: Convert the uploaded CSVs into actual DataFrames
+            raw_dfs = [pd.read_csv(f) for f in uploaded_files]
+            
+            # 2. RUN THE MATH: Hand the DataFrames to the math engine
+            df_base = load_and_prepare_data(raw_dfs)
             raw_output = predict_and_cluster(df_base, historical_rains, rain_forecast, user_w_loc, 1.0, user_danger)
             
             if isinstance(raw_output, (tuple, list)):
