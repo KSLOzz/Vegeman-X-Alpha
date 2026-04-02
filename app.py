@@ -7,7 +7,7 @@ import contextily as ctx
 # Import the math engine
 from model_engine import load_and_prepare_data, predict_and_cluster
 
-st.set_page_config(page_title="Florida Vegetation Predictor", layout="wide")
+st.set_page_config(page_title="FPL Vegetation Predictor", layout="wide")
 
 # CSS hack to completely hide the +/- buttons on number inputs for a cleaner UI
 st.markdown(
@@ -20,7 +20,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("🌴 Predictive Vegetation Management")
+st.title("🌴 VegeMan X Beta")
 
 # ==========================================
 # UI CONTROLS (SIDEBAR)
@@ -47,7 +47,7 @@ rain_forecast = st.sidebar.number_input("2025 Forecast Rain", value=48.7, step=N
 
 st.sidebar.markdown("---")
 user_w_loc = st.sidebar.slider("Routing Weight (w_loc)", min_value=0.5, max_value=5.0, value=2.25, step=0.25)
-user_danger = st.sidebar.slider("Danger Threshold (ft)", min_value=0.0, max_value=10.0, value=4.0, step=0.5)
+user_danger = st.sidebar.slider("Danger Threshold (ft)", min_value=0.0, max_value=20.0, value=4.0, step=0.5)
 
 # ==========================================
 # EXECUTION BUTTON
