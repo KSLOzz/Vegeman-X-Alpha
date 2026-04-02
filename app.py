@@ -3,119 +3,168 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import geopandas as gpd
 import contextily as ctx
-import matplotlib.patches as mpatches
 
-# Import your heavy-lifting math functions from your engine file
+# Import the math engine
 from model_engine import load_and_prepare_data, predict_and_cluster
 
-st.set_page_config(page_title="FPL Vegetation Predictor", layout="wide")
-st.title("🌴 VegeMan X Alpha")
+st.set_page_config(page_title="Florida Vegetation Predictor", layout="wide")
 
-# --- UI CONTROLS (SIDEBAR) ---
-st.sidebar.header("📁 Data Input")
-file_22 = st.sidebar.file_uploader("Upload 2022 Data", type=["csv"])
-file_23 = st.sidebar.file_uploader("Upload 2023 Data", type=["csv"])
-file_24 = st.sidebar.file_uploader("Upload 2024 Data", type=["csv"])
+# CSS hack to completely hide the +/- buttons on number inputs for a cleaner UI
+st.markdown(
+    """
+    <style>
+        button[title="Step down"] {display: none;}
+        button[title="Step up"] {display: none;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("🌴 Predictive Vegetation Management")
+
+# ==========================================
+# UI CONTROLS (SIDEBAR)
+# ==========================================
+st.sidebar.header("📁 Dynamic Data Input")
+num_years = st.sidebar.number_input("How many years of historical data?", min_value=2, max_value=10, value=3)
+
+uploaded_files = []
+for i in range(num_years):
+    file = st.sidebar.file_uploader(f"Upload Year {i+1} Data (CSV)", type=["csv"], key=f"file_{i}")
+    if file:
+        uploaded_files.append(file)
 
 st.sidebar.markdown("---")
 st.sidebar.header("🎛️ Scenario Parameters")
+st.sidebar.subheader("🌧️ Rainfall Parameters (inches)")
 
-# 1. Rain input (Text box / Number Input)
-user_rain = st.sidebar.number_input("Predicted Rainfall (inches)", min_value=0.0, max_value=200.0, value=48.7, step=0.1)
+historical_rains = []
+for i in range(num_years - 1):
+    rain = st.sidebar.number_input(f"Historical Rain: Year {i+1} ➔ Year {i+2}", value=50.0, step=None, key=f"rain_{i}")
+    historical_rains.append(rain)
 
-# 2. w_loc slider
-user_w_loc = st.sidebar.slider("Routing Weight (w_loc)", min_value=0.5, max_value=5.0, value=2.25, step=0.25)
-
-# 3. Clearance Danger Threshold (0 to 20)
-user_danger = st.sidebar.slider("Clearance Threshold (ft)", min_value=0.0, max_value=20.0, value=4.0, step=0.5)
-
-# 4. Region Dropdown Menu
-user_region = st.sidebar.selectbox("Select Region to Display", ["All Regions", "north", "southwest", "southeast"])
+rain_forecast = st.sidebar.number_input("2025 Forecast Rain", value=48.7, step=None)
 
 st.sidebar.markdown("---")
+user_w_loc = st.sidebar.slider("Routing Weight (w_loc)", min_value=0.5, max_value=5.0, value=2.25, step=0.25)
+user_danger = st.sidebar.slider("Danger Threshold (ft)", min_value=0.0, max_value=10.0, value=4.0, step=0.5)
 
-# --- EXECUTION BUTTON ---
+# ==========================================
+# EXECUTION BUTTON
+# ==========================================
 if st.sidebar.button("🚀 Run Prediction Engine"):
-    if file_22 and file_23 and file_24:
-        with st.spinner("Processing LiDAR zones and running K-Means..."):
+    if len(uploaded_files) == num_years:
+        with st.spinner("Processing dynamic LiDAR data and running LMM..."):
             
-            # Run the heavy math (consolidated into one clean step)
-            df_base = load_and_prepare_data(file_22, file_23, file_24)
-            df_final = predict_and_cluster(df_base, user_rain, user_w_loc, 1.0, user_danger)
+            df_base = load_and_prepare_data(uploaded_files)
+            raw_output = predict_and_cluster(df_base, historical_rains, rain_forecast, user_w_loc, 1.0, user_danger)
             
-            # Save the final data into Streamlit's memory (Session State)
+            if isinstance(raw_output, (tuple, list)):
+                df_final = raw_output[0]
+            else:
+                df_final = raw_output
+            
             st.session_state['df_final'] = df_final
-            
+            st.rerun() # Refresh app to reveal filters
     else:
-        st.sidebar.error("⚠️ Please upload all three CSV files.")
+        st.sidebar.error(f"⚠️ Please upload all {num_years} CSV files before running.")
 
-# --- MAIN DISPLAY (Only renders AFTER the model is run) ---
+# ==========================================
+# MAIN DISPLAY & DYNAMIC FILTERS
+# ==========================================
 if 'df_final' in st.session_state:
     
-    # Grab the data from memory
     df_display = st.session_state['df_final'].copy()
+
+    # --- DYNAMIC FILTERS ---
+    st.sidebar.markdown("---")
+    st.sidebar.header("🔍 Display Filters")
     
-    # Filter by the Dropdown selection
-    if user_region != "All Regions":
-        df_display = df_display[df_display['zone'] == user_region]
-        st.success(f"Model Complete! Displaying data for the **{user_region.upper()}** zone.")
-    else:
-        st.success("Model Complete! Displaying data for **ALL REGIONS**.")
+    # Substation Filter (Checks if column exists first)
+    if 'substation' in df_display.columns:
+        available_substations = ["All Substations"] + sorted(df_display['substation'].dropna().unique().tolist())
+        user_substation = st.sidebar.selectbox("Filter by Substation", available_substations)
+        if user_substation != "All Substations":
+            df_display = df_display[df_display['substation'] == user_substation]
+    
+    # Line Type Filter (Checks if column exists first)
+    if 'line_type' in df_display.columns:
+        available_lines = ["All Lines"] + sorted(df_display['line_type'].dropna().unique().tolist())
+        user_line_type = st.sidebar.selectbox("Filter by Line Type", available_lines)
+        if user_line_type != "All Lines":
+            df_display = df_display[df_display['line_type'] == user_line_type]
 
-    # ==========================================
-    # 🚨 DIAGNOSTIC TOOL 🚨
-    # ==========================================
-    st.write("📊 **Diagnostic Tool - Total points per zone in the raw dataset:**", st.session_state['df_final']['zone'].value_counts().to_dict())
-    st.write(f"🔍 **Points currently being displayed ({user_region}):** {len(df_display)}")
+    st.success("✅ Model Complete! Operations Dashboards are live.")
+
+    # --- DIAGNOSTIC TOOL ---
+    st.write(f"📊 **Total Trees Tracked Statewide:** {len(st.session_state['df_final'])}")
+    st.write(f"🔍 **Currently Displaying (Filtered):** {len(df_display)}")
     st.markdown("---")
-    # ==========================================
 
+    # --- DASHBOARD TABS ---
     tab1, tab2 = st.tabs(["🗺️ Geospatial Risk Map", "📊 Operations Dashboard"])
 
     with tab1:
-        st.header("2025 Predicted Clearance")
+        st.header("Predicted Clearance Risk Map")
         
-        # --- NATIVE UI LEGEND ---
+        # Native UI Legend based on user's threshold
         st.markdown("**Risk Level Legend (Predicted Distance to Wire):**")
         leg1, leg2, leg3, leg4, leg5 = st.columns(5)
         with leg1: st.markdown(f"🟥 **< {user_danger} ft** (Critical)")
-        with leg2: st.markdown("🟧 **4–6 ft** (High Priority)")
-        with leg3: st.markdown("🟨 **6–8 ft** (Watch List)")
-        with leg4: st.markdown("🟩 **8–10 ft** (Healthy)")
-        with leg5: st.markdown("⬜ **≥ 10 ft** (Safe)")
+        with leg2: st.markdown(f"🟧 **{user_danger}–{user_danger+2} ft** (High Priority)")
+        with leg3: st.markdown(f"🟨 **{user_danger+2}–{user_danger+4} ft** (Watch List)")
+        with leg4: st.markdown("🟩 **Healthy**")
+        with leg5: st.markdown("⬜ **Safe**")
         st.markdown("---")
 
-        # --- MAP GENERATION ---
-        # If the region has no data, warn the user instead of crashing
         if df_display.empty:
-            st.warning("No data available for the selected region.")
+            st.warning("No data available for the selected filters.")
         else:
             fig, ax = plt.subplots(figsize=(10, 8))
             
-            # Reproject to Web Mercator for the satellite background
             gdf_plot = gpd.GeoDataFrame(
                 df_display, 
-                geometry=gpd.points_from_xy(df_display["lon_2022"], df_display["lat_2022"]), 
+                geometry=gpd.points_from_xy(df_display["lon"], df_display["lat"]), 
                 crs="EPSG:4326"
             ).to_crs(epsg=3857)
             
-            # Plot the points (s=25 makes them visible on high-res maps)
             ax.scatter(gdf_plot.geometry.x, gdf_plot.geometry.y, c=gdf_plot["risk_color"], s=25, alpha=0.9)
-            
-            # Lock the aspect ratio to prevent stretching
             ax.set_aspect('equal')
             
-            # Add Satellite Background (Forced High-Definition)
-            ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, zoom=14)
-                
+            # Forced High-Definition Satellite Zoom
+            ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, zoom=15)
+            ax.set_axis_off()
             st.pyplot(fig)
 
+# --- PREDICTED VEGETATION DOWNLOAD ---
+        st.markdown("---")
+        st.subheader("📋 Export Prediction Data")
+        
+        @st.cache_data
+        def convert_df(df):
+            # We drop 'geometry' and 'risk_color' for the CSV to keep it clean for Excel/GIS
+            cols_to_drop = [c for c in ['geometry', 'risk_color'] if c in df.columns]
+            return df.drop(columns=cols_to_drop).to_csv(index=False).encode('utf-8')
+
+        # This captures the current filtered state of the model (Substation, Line Type, etc.)
+        prediction_csv = convert_df(df_display)
+
+        st.download_button(
+            label="📥 Download Predicted Vegetation (CSV)",
+            data=prediction_csv,
+            file_name='predicted_vegetation_export.csv',
+            mime='text/csv',
+        )
 
     with tab2:
         st.header("Risk Distribution Summary")
         if not df_display.empty:
-            # Create a clean summary table based on the filtered data
             risk_summary = df_display.groupby("risk_bucket").size().reset_index(name="Point Count")
             st.dataframe(risk_summary, use_container_width=True)
+            
+            if 'dispatch_cluster' in df_display.columns:
+                st.subheader("Dispatch Clusters (K-Means Routing)")
+                cluster_counts = df_display.groupby("dispatch_cluster").size().reset_index(name="Trees to Cut")
+                st.dataframe(cluster_counts, use_container_width=True)
         else:
             st.write("No data to summarize.")
