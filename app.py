@@ -9,7 +9,7 @@ from model_engine import load_and_prepare_data, predict_and_cluster
 
 st.set_page_config(page_title="FPL Vegetation Predictor", layout="wide")
 
-# CSS hack to completely hide the +/- buttons on number inputs for a cleaner UI
+# CSS hack to completely hide the +/- buttons on number inputs for a cleaner UI (this doesn't work :( )
 st.markdown(
     """
     <style>
@@ -43,23 +43,31 @@ for i in range(num_years - 1):
     rain = st.sidebar.number_input(f"Historical Rain: Year {i+1} ➔ Year {i+2}", value=50.0, step=None, key=f"rain_{i}")
     historical_rains.append(rain)
 
-rain_forecast = st.sidebar.number_input("2025 Forecast Rain", value=48.7, step=None)
+rain_forecast = st.sidebar.number_input("Desired Year Forecast Rain", value=48.7, step=None)
 
 st.sidebar.markdown("---")
-user_w_loc = st.sidebar.slider("Routing Weight (w_loc)", min_value=0.5, max_value=5.0, value=2.25, step=0.25)
+user_w_loc = st.sidebar.slider("Routing Weight (w_loc)", min_value=0.5, max_value=5.0, value=2.25, step=0.25) #location vs growthrate clustering
 user_danger = st.sidebar.slider("Danger Threshold (ft)", min_value=0.0, max_value=20.0, value=4.0, step=0.5)
 
-# ==========================================
 # EXECUTION BUTTON
-# ==========================================
 if st.sidebar.button("🚀 Run Prediction Engine"):
     if len(uploaded_files) == num_years:
-        with st.spinner("Processing dynamic LiDAR data and running LMM..."):
+        with st.spinner("Processing dynamic LiDAR data and running K-Nearest Neighbors..."):
             
-            # 1. OPEN THE FILES: Convert the uploaded CSVs into actual DataFrames
-            raw_dfs = [pd.read_csv(f) for f in uploaded_files]
+            # OPEN THE FILES: Only load the essential columns into RAM to prevent OOM crashes.
+            keep_cols = [
+                'substation', 'line.type', 'latitude', 'longitude', 'clearance',
+                'encroachment.length.u0', 'encroachment.length.u1', 
+                'encroachment.length.u2', 'encroachment.length.u3', 
+                'encroachment.length.u4'
+            ]
             
-            # 2. RUN THE MATH: Hand the DataFrames to the math engine
+            raw_dfs = [
+                pd.read_csv(f, usecols=lambda x: x.strip().lower() in keep_cols) 
+                for f in uploaded_files
+            ]
+            
+            # RUN THE MATH: Hand the optimized DataFrames to the math engine
             df_base = load_and_prepare_data(raw_dfs)
             raw_output = predict_and_cluster(df_base, historical_rains, rain_forecast, user_w_loc, 1.0, user_danger)
             
@@ -73,9 +81,8 @@ if st.sidebar.button("🚀 Run Prediction Engine"):
     else:
         st.sidebar.error(f"⚠️ Please upload all {num_years} CSV files before running.")
 
-# ==========================================
+
 # MAIN DISPLAY & DYNAMIC FILTERS
-# ==========================================
 if 'df_final' in st.session_state:
     
     df_display = st.session_state['df_final'].copy()
@@ -101,7 +108,7 @@ if 'df_final' in st.session_state:
     st.success("✅ Model Complete! Operations Dashboards are live.")
 
     # --- DIAGNOSTIC TOOL ---
-    st.write(f"📊 **Total Trees Tracked Statewide:** {len(st.session_state['df_final'])}")
+    st.write(f"📊 **Total 60x30 Work Zones Tracked:** {len(st.session_state['df_final'])}")
     st.write(f"🔍 **Currently Displaying (Filtered):** {len(df_display)}")
     st.markdown("---")
 
@@ -136,11 +143,11 @@ if 'df_final' in st.session_state:
             ax.set_aspect('equal')
             
             # Forced High-Definition Satellite Zoom
-            ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, zoom=15)
+            ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, zoom=14)
             ax.set_axis_off()
             st.pyplot(fig)
 
-# --- PREDICTED VEGETATION DOWNLOAD ---
+        # --- PREDICTED VEGETATION DOWNLOAD ---
         st.markdown("---")
         st.subheader("📋 Export Prediction Data")
         
@@ -163,12 +170,12 @@ if 'df_final' in st.session_state:
     with tab2:
         st.header("Risk Distribution Summary")
         if not df_display.empty:
-            risk_summary = df_display.groupby("risk_bucket").size().reset_index(name="Point Count")
+            risk_summary = df_display.groupby("risk_bucket").size().reset_index(name="Work Zones")
             st.dataframe(risk_summary, use_container_width=True)
             
             if 'dispatch_cluster' in df_display.columns:
                 st.subheader("Dispatch Clusters (K-Means Routing)")
-                cluster_counts = df_display.groupby("dispatch_cluster").size().reset_index(name="Trees to Cut")
+                cluster_counts = df_display.groupby("dispatch_cluster").size().reset_index(name="Zones to Clear")
                 st.dataframe(cluster_counts, use_container_width=True)
         else:
             st.write("No data to summarize.")
