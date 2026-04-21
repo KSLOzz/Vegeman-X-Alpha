@@ -46,7 +46,6 @@ for i in range(num_years - 1):
 rain_forecast = st.sidebar.number_input("Desired Year Forecast Rain", value=48.7, step=None)
 
 st.sidebar.markdown("---")
-user_w_loc = st.sidebar.slider("Routing Weight (w_loc)", min_value=0.5, max_value=5.0, value=2.25, step=0.25) #location vs growthrate clustering
 user_danger = st.sidebar.slider("Danger Threshold (ft)", min_value=0.0, max_value=20.0, value=4.0, step=0.5)
 
 # EXECUTION BUTTON
